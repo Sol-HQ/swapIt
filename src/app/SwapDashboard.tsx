@@ -371,7 +371,7 @@ export default function SwapDashboard() {
         wallet: passthroughWallet,
         endpoint: connection.rpcEndpoint,
         cluster: "mainnet-beta",
-        formProps: { fixedInputMint: true, fixedOutputMint: false, initialAmount: "1", initialInputMint: INITIAL_INPUT_MINT, initialOutputMint: INITIAL_OUTPUT_MINT },
+        formProps: { fixedInputMint: true, fixedOutputMint: false, initialAmount: "1000000", initialInputMint: INITIAL_INPUT_MINT, initialOutputMint: INITIAL_OUTPUT_MINT },
         onSwapStart: () => {},
         onSwapSuccess: (swapInfo: any) => { setSwapHistory(prev=>[{ ...(swapInfo as any), timestamp: new Date().toLocaleString() }, ...prev]); fetchWalletTokens(); if (publicKey) { connection.getBalance(publicKey).then((lamports: number) => setSolBalance(lamports / 1e9)).catch(()=>{}); }},
         onSwapError: (error: any) => { setSwapHistory(prev=>[{ error: error?.message || String(error), timestamp: new Date().toLocaleString() }, ...prev]); setJupStatus(s=>({...s, error: error?.message || String(error)})); }
@@ -468,7 +468,7 @@ export default function SwapDashboard() {
         cluster: "mainnet-beta",
         refetchIntervalForTokenAccounts: 10,
         strictTokenList: false,
-        formProps: { fixedInputMint: true, fixedOutputMint: false, initialAmount: "1", initialInputMint: INITIAL_INPUT_MINT, initialOutputMint: INITIAL_OUTPUT_MINT },
+        formProps: { fixedInputMint: true, fixedOutputMint: false, initialAmount: "1000000", initialInputMint: INITIAL_INPUT_MINT, initialOutputMint: INITIAL_OUTPUT_MINT },
         onSwapStart: (info: any) => { console.log('[JUP] swapStart', info); },
         onSwapSuccess: (swapInfo: any) => { console.log('[JUP] swapSuccess', swapInfo); setSwapHistory(prev=>[{ ...(swapInfo as any), timestamp: new Date().toLocaleString() }, ...prev]); fetchWalletTokens(); if (publicKey) { connection.getBalance(publicKey).then((lamports: number) => setSolBalance(lamports / 1e9)).catch(()=>{}); } },
         onSwapError: (error: any) => { console.error('[JUP] swapError', error); setSwapHistory(prev=>[{ error: error?.message || String(error), timestamp: new Date().toLocaleString() }, ...prev]); setJupStatus(s=>({...s, error: error?.message || String(error)})); }
