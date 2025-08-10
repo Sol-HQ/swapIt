@@ -373,8 +373,8 @@ export default function SwapDashboard() {
         cluster: "mainnet-beta",
         formProps: { fixedInputMint: true, fixedOutputMint: false, initialAmount: "1000000", initialInputMint: INITIAL_INPUT_MINT, initialOutputMint: INITIAL_OUTPUT_MINT },
         onSwapStart: () => {},
-        onSwapSuccess: (swapInfo: any) => { setSwapHistory(prev=>[{ ...(swapInfo as any), timestamp: new Date().toLocaleString() }, ...prev]); fetchWalletTokens(); if (publicKey) { connection.getBalance(publicKey).then((lamports: number) => setSolBalance(lamports / 1e9)).catch(()=>{}); }},
-        onSwapError: (error: any) => { setSwapHistory(prev=>[{ error: error?.message || String(error), timestamp: new Date().toLocaleString() }, ...prev]); setJupStatus(s=>({...s, error: error?.message || String(error)})); }
+        onSwapSuccess: (swapInfo: any) => { console.log('[JUP] swapSuccess', swapInfo); logJupState('afterSuccess'); setSwapHistory(prev=>[{ ...(swapInfo as any), timestamp: new Date().toLocaleString() }, ...prev]); fetchWalletTokens(); if (publicKey) { connection.getBalance(publicKey).then((lamports: number) => setSolBalance(lamports / 1e9)).catch(()=>{}); }},
+        onSwapError: (error: any) => { console.error('[JUP] swapError', error); logJupState('afterError'); setSwapHistory(prev=>[{ error: error?.message || String(error), code: (error && (error.code||error.type)) || undefined, raw: JSON.stringify(error, (k,v)=> (typeof v === 'function'? undefined : v)), timestamp: new Date().toLocaleString() }, ...prev]); setJupStatus(s=>({...s, error: error?.message || String(error)})); }
       });
       w.__JUP_INIT_DONE = true;
       jupiterInitializedRef.current = true;
@@ -408,24 +408,29 @@ export default function SwapDashboard() {
 
   // --- Jupiter deep debug helpers ---
   function logJupState(tag: string) {
-    try { const w:any = window as any; const st = w?.Jupiter?.getState?.(); console.log('[JUP][STATE]', tag, st); } catch(e){ console.warn('[JUP][STATE] fail', tag, e); }
+    try {
+      const w:any = window as any;
+      const st = w?.Jupiter?.getState?.();
+      const snap = st ? {
+        form: st.form,
+        wallet: st.wallet,
+        route: st.route,
+        lastError: st.lastError,
+        priceFetched: !!st.priceMap,
+        inputAmount: st.form?.amount,
+        inputMint: st.form?.inputMint,
+        outputMint: st.form?.outputMint,
+      } : null;
+      console.log('[JUP][STATE]', tag, snap);
+    } catch(e){ console.warn('[JUP][STATE] fail', tag, e); }
   }
 
-  function installSwapButtonObserver() {
-    try {
-      const target = document.getElementById('target-container');
-      if (!target) return;
-      const obs = new MutationObserver(() => {
-        const btn = target.querySelector('button[data-testid="swap-button"]') as HTMLButtonElement | null;
-        if (btn) {
-          const disabled = btn.disabled;
-          console.log('[JUP][BTN]', { text: btn.innerText.trim(), disabled, title: btn.title });
-        }
-      });
-      obs.observe(target, { subtree: true, childList: true, attributes: true, attributeFilter:['disabled'] });
-      setTimeout(()=>obs.disconnect(), 30000);
-    } catch(e){ console.warn('[JUP] swap btn observer fail', e); }
-  }
+  // Extra periodic snapshot when debug flag enabled
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_DEBUG_SWAP !== '1') return;
+    const id = setInterval(()=>logJupState('interval'), 7000);
+    return () => clearInterval(id);
+  }, []);
 
   // Capture console.error temporarily to surface hidden plugin errors (restore after 20s)
   useEffect(() => {
@@ -470,8 +475,8 @@ export default function SwapDashboard() {
         strictTokenList: false,
         formProps: { fixedInputMint: true, fixedOutputMint: false, initialAmount: "1000000", initialInputMint: INITIAL_INPUT_MINT, initialOutputMint: INITIAL_OUTPUT_MINT },
         onSwapStart: (info: any) => { console.log('[JUP] swapStart', info); },
-        onSwapSuccess: (swapInfo: any) => { console.log('[JUP] swapSuccess', swapInfo); setSwapHistory(prev=>[{ ...(swapInfo as any), timestamp: new Date().toLocaleString() }, ...prev]); fetchWalletTokens(); if (publicKey) { connection.getBalance(publicKey).then((lamports: number) => setSolBalance(lamports / 1e9)).catch(()=>{}); } },
-        onSwapError: (error: any) => { console.error('[JUP] swapError', error); setSwapHistory(prev=>[{ error: error?.message || String(error), timestamp: new Date().toLocaleString() }, ...prev]); setJupStatus(s=>({...s, error: error?.message || String(error)})); }
+        onSwapSuccess: (swapInfo: any) => { console.log('[JUP] swapSuccess', swapInfo); logJupState('afterSuccess'); setSwapHistory(prev=>[{ ...(swapInfo as any), timestamp: new Date().toLocaleString() }, ...prev]); fetchWalletTokens(); if (publicKey) { connection.getBalance(publicKey).then((lamports: number) => setSolBalance(lamports / 1e9)).catch(()=>{}); } },
+        onSwapError: (error: any) => { console.error('[JUP] swapError', error); logJupState('afterError'); setSwapHistory(prev=>[{ error: error?.message || String(error), code: (error && (error.code||error.type)) || undefined, raw: JSON.stringify(error, (k,v)=> (typeof v === 'function'? undefined : v)), timestamp: new Date().toLocaleString() }, ...prev]); setJupStatus(s=>({...s, error: error?.message || String(error)})); }
       });
       setJupStatus({ inited:true, wallet: publicKey?.toBase58() || undefined });
       console.log('[JUP] re-init done');
