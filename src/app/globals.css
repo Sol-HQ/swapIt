@@ -3,6 +3,8 @@
 :root {
   --background: #000000;
   --foreground: #ededed;
+  --font-geist-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --font-geist-mono: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
 }
 
 @theme inline {
@@ -20,10 +22,9 @@
 }
 
 body {
-  /* Themed cosmic background (ensure /public/chris2477.png exists) */
-  background: #000 url('/chris2477.png') center center / cover fixed no-repeat;
+  background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans);
   min-height: 100vh;
   position: relative;
   overflow-x: hidden;
