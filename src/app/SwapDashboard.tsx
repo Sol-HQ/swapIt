@@ -99,6 +99,8 @@ export default function SwapDashboard() {
   const [jupStatus, setJupStatus] = useState<{ inited: boolean; wallet?: string; error?: string }>({ inited: false });
   const [ultraBusy, setUltraBusy] = useState(false);
   const [ultraStatus, setUltraStatus] = useState<{ phase: string; attempt: number; message?: string; signature?: string; requestId?: string; error?: string } | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected');
+  const [userFriendlyError, setUserFriendlyError] = useState<string | null>(null);
 
   /******** Refs ********/ 
   const jupiterInitializedRef = useRef(false);
@@ -162,7 +164,7 @@ export default function SwapDashboard() {
           if (uriMatch) metadata = { uri: uriMatch[0] };
         } catch {}
         if (!metadata) return; const clean = (s: string) => s?.replace?.(/\0/g, '')?.trim?.() || '';
-        let uri = clean(metadata.uri || ''); let json: any = null; if (uri) { try { const res = await fetch(uri); if (res.ok) json = await res.json(); } catch {} }
+        const uri = clean(metadata.uri || ''); let json: any = null; if (uri) { try { const res = await fetch(uri); if (res.ok) json = await res.json(); } catch {} }
         const current = metaCacheRef.current.get(mint) || { address: mint, decimals: 9, logoURI: '', name: mint, symbol: mint.slice(0, 4) } as TokenMeta;
         const updated: TokenMeta = { ...current, address: mint, symbol: current.symbol, name: current.name, logoURI: current.logoURI || json?.image || json?.logo || '', decimals: current.decimals ?? 9, tags: current.tags };
         metaCacheRef.current.set(mint, updated);
@@ -265,6 +267,34 @@ export default function SwapDashboard() {
 
   useEffect(() => { fetchWalletTokens(); }, [fetchWalletTokens]);
 
+  /******** Connection Status Monitoring ********/ 
+  useEffect(() => {
+    if (!connected) {
+      setConnectionStatus('disconnected');
+      setUserFriendlyError(null);
+      return;
+    }
+    
+    setConnectionStatus('connecting');
+    
+    // Test connection with a simple RPC call
+    const testConnection = async () => {
+      try {
+        const health = await connection.getVersion();
+        if (health) {
+          setConnectionStatus('connected');
+          setUserFriendlyError(null);
+        }
+      } catch (error: any) {
+        console.warn('Connection test failed:', error);
+        setConnectionStatus('error');
+        setUserFriendlyError('Unable to connect to Solana network. Please check your internet connection and try again.');
+      }
+    };
+    
+    testConnection();
+  }, [connected, connection]);
+
   /******** SOL Balance Subscription ********/ 
   useEffect(() => {
     if (!connected || !publicKey) {
@@ -283,15 +313,45 @@ export default function SwapDashboard() {
 
   /******** Blockhash ********/ 
   const refreshBlockData = useCallback(async () => {
-    try { const latest = await connection.getLatestBlockhash(); setBlockhash(latest.blockhash); const slot = await connection.getSlot(); const ts = await connection.getBlockTime(slot); if (ts) setBlockTime(new Date(ts * 1000).toLocaleString()); } catch {}
-  }, [connection]);
+    try { 
+      const latest = await connection.getLatestBlockhash(); 
+      setBlockhash(latest.blockhash); 
+      const slot = await connection.getSlot(); 
+      const ts = await connection.getBlockTime(slot); 
+      if (ts) setBlockTime(new Date(ts * 1000).toLocaleString()); 
+      
+      // Clear any previous errors if successful
+      if (connectionStatus === 'error') {
+        setConnectionStatus('connected');
+        setUserFriendlyError(null);
+      }
+    } catch (error: any) {
+      console.warn('Failed to refresh block data:', error);
+      setConnectionStatus('error');
+      setUserFriendlyError('Unable to fetch latest blockchain data. The network might be experiencing issues.');
+    }
+  }, [connection, connectionStatus]);
   useEffect(() => { refreshBlockData(); }, [refreshBlockData]);
   useEffect(() => { if (!autoBlockRefresh) return; const id = setInterval(refreshBlockData, 180000); return () => clearInterval(id); }, [autoBlockRefresh, refreshBlockData]);
 
   /******** Jupiter Script Load + Init ********/ 
   useEffect(() => {
     if (document.getElementById('jupiter-plugin-script')) { jupiterScriptLoadedRef.current = true; return; }
-    const script = document.createElement('script'); script.id = 'jupiter-plugin-script'; script.src = 'https://plugin.jup.ag/plugin-v1.js'; script.async = true; script.onload = () => { jupiterScriptLoadedRef.current = true; console.log('Jupiter script loaded'); }; script.onerror = (e) => console.error('Failed to load Jupiter plugin script', e); document.head.appendChild(script);
+    const script = document.createElement('script'); 
+    script.id = 'jupiter-plugin-script'; 
+    script.src = 'https://plugin.jup.ag/plugin-v1.js'; 
+    script.async = true; 
+    script.onload = () => { 
+      jupiterScriptLoadedRef.current = true; 
+      console.log('Jupiter script loaded successfully'); 
+      setUserFriendlyError(null);
+    }; 
+    script.onerror = (e) => {
+      console.error('Failed to load Jupiter plugin script', e);
+      setUserFriendlyError('Failed to load swap functionality. Please check your internet connection and refresh the page.');
+      setJupStatus(prev => ({ ...prev, error: 'Failed to load Jupiter plugin' }));
+    }; 
+    document.head.appendChild(script);
   }, []);
 
   // Poll for global object
@@ -553,13 +613,89 @@ export default function SwapDashboard() {
     );
   };
 
+  /******** Error Alert Component ********/ 
+  const ErrorAlert = () => {
+    if (!userFriendlyError) return null;
+    
+    return (
+      <div style={{ 
+        backgroundColor: '#3c2415', 
+        border: '1px solid #f87171', 
+        borderRadius: 12, 
+        padding: 16, 
+        marginBottom: 16,
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 12
+      }}>
+        <div style={{ color: '#f87171', fontSize: 18, lineHeight: 1 }}>⚠</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ color: '#f87171', fontWeight: 600, fontSize: 14, marginBottom: 4 }}>Connection Issue</div>
+          <div style={{ color: '#fca5a5', fontSize: 13, lineHeight: 1.4 }}>{userFriendlyError}</div>
+          <button 
+            onClick={() => { refreshBlockData(); setUserFriendlyError(null); }}
+            style={{ 
+              marginTop: 8, 
+              padding: '6px 12px', 
+              fontSize: 12, 
+              backgroundColor: '#dc2626', 
+              color: 'white', 
+              border: 'none', 
+              borderRadius: 6, 
+              cursor: 'pointer' 
+            }}
+          >
+            Retry Connection
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const UsageInfoPanel = () => {
+    if (connected && connectionStatus === 'connected') return null;
+    
+    return (
+      <div style={{ 
+        backgroundColor: '#1a1a2e', 
+        border: '1px solid #4c4c6d', 
+        borderRadius: 12, 
+        padding: 16, 
+        marginBottom: 16
+      }}>
+        <div style={{ color: '#9ca3af', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>📘 How to Use SwapIt</div>
+        <div style={{ color: '#d1d5db', fontSize: 13, lineHeight: 1.5 }}>
+          <div style={{ marginBottom: 8 }}>
+            <strong style={{ color: '#60a5fa' }}>1. Connect Your Wallet:</strong> Click "Select Wallet" and choose Phantom or Solflare to connect.
+          </div>
+          <div style={{ marginBottom: 8 }}>
+            <strong style={{ color: '#60a5fa' }}>2. Check Status:</strong> Watch for connection status indicators and error messages.
+          </div>
+          <div>
+            <strong style={{ color: '#60a5fa' }}>3. View Balance:</strong> Your SOL balance and tokens will appear once connected.
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   /******** Render ********/ 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr', gridTemplateRows: 'auto 1fr', gap: 24, padding: 24, maxWidth: 1200, margin: '0 auto', position: 'relative' }}>
+      <ErrorAlert />
+      <UsageInfoPanel />
       <div style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
           <div style={{ gridColumn: '1 / 2', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>Swap Dashboard</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>Swap Dashboard</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 8px', borderRadius: 8, backgroundColor: '#1f1f23', border: '1px solid #333' }}>
+                <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: connectionStatus === 'connected' ? '#4ade80' : connectionStatus === 'connecting' ? '#fbbf24' : connectionStatus === 'error' ? '#f87171' : '#6b7280' }} />
+                <span style={{ color: connectionStatus === 'connected' ? '#4ade80' : connectionStatus === 'connecting' ? '#fbbf24' : connectionStatus === 'error' ? '#f87171' : '#6b7280', fontWeight: 500 }}>
+                  {connectionStatus === 'connected' ? 'Connected' : connectionStatus === 'connecting' ? 'Connecting...' : connectionStatus === 'error' ? 'Connection Error' : 'Disconnected'}
+                </span>
+              </div>
+            </div>
             <div style={{ fontSize: 12, color: '#ccc' }}>Manage your token swaps on Solana</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8 }}>
@@ -568,8 +704,12 @@ export default function SwapDashboard() {
                   <WalletMultiButton style={{ borderRadius: 16, paddingInline: 12, paddingBlock: 8, fontSize: 14 }} />
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
-                  <div style={{ color: '#777', fontSize: 12 }}>Output:</div>
-                  <div style={{ fontFamily: 'monospace', fontSize: 14, color: '#fff' }}>{(tokens.length && tokens[0].symbol) || '-'}</div>
+                  <div style={{ color: '#777', fontSize: 12 }}>Balance:</div>
+                  <div style={{ fontFamily: 'monospace', fontSize: 14, color: '#fff' }}>
+                    {connected ? (
+                      solBalance !== null ? `${(solBalance).toLocaleString(undefined, { maximumFractionDigits: 4 })} SOL` : 'Loading...'
+                    ) : 'Connect wallet'}
+                  </div>
                 </div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
